@@ -1,0 +1,348 @@
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+
+// Produtos iniciais (fora do componente para não recriar a cada render)
+const produtosIniciais = [
+  { id: 1, nome: "Caneca personalizada", preco: 49.9, img: "https://via.placeholder.com/400x300?text=Caneca", categoria: "Casa" },
+  { id: 2, nome: "Camiseta básica", preco: 79.9, img: "https://via.placeholder.com/400x300?text=Camiseta", categoria: "Roupas" },
+  { id: 3, nome: "Caderno A5", preco: 29.9, img: "https://via.placeholder.com/400x300?text=Caderno", categoria: "Papelaria" },
+  { id: 4, nome: "Fone Bluetooth", preco: 199.9, img: "https://via.placeholder.com/400x300?text=Fone", categoria: "Eletrônicos" },
+  { id: 5, nome: "Caneta tinteiro", preco: 15.0, img: "https://via.placeholder.com/400x300?text=Caneta", categoria: "Papelaria" }
+];
+
+function formatCurrency(value) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+// Hook simples para persistência no localStorage
+function useLocalStorage(key, initialValue) {
+  const [state, setState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : initialValue;
+    } catch {
+      return initialValue;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch {}
+  }, [key, state]);
+
+  return [state, setState];
+}
+
+export default function LojaVirtual() {
+  const [produtos] = useState(produtosIniciais);
+  const [query, setQuery] = useState("");
+  const [categoria, setCategoria] = useState("Todas");
+  const [cart, setCart] = useLocalStorage("loja_cart_v1", []);
+  const [isCartOpen, setCartOpen] = useState(false);
+  const [detalhe, setDetalhe] = useState(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [user /* stub */ , setUser] = useState(null);
+
+  // refs para focar em modais
+  const detalheRef = useRef(null);
+  const checkoutRef = useRef(null);
+
+  // bloquear scroll do body quando modais estiverem abertos
+  useEffect(() => {
+    const aberto = !!detalhe || checkoutOpen;
+    const original = document.body.style.overflow;
+    if (aberto) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = original || "";
+    }
+    return () => {
+      document.body.style.overflow = original || "";
+    };
+  }, [detalhe, checkoutOpen]);
+
+  // fechar modais com ESC
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") {
+        if (detalhe) setDetalhe(null);
+        if (checkoutOpen) setCheckoutOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [detalhe, checkoutOpen]);
+
+  const adicionarAoCarrinho = useCallback((prod) => {
+    setCart((c) => {
+      const existe = c.find((i) => i.id === prod.id);
+      if (existe) return c.map((i) => i.id === prod.id ? { ...i, qty: i.qty + 1 } : i);
+      return [...c, { ...prod, qty: 1 }];
+    });
+    setCartOpen(true);
+  }, [setCart]);
+
+  const alterarQuantidade = useCallback((id, novaQty) => {
+    setCart((c) => c
+      .map(i => i.id === id ? { ...i, qty: Math.max(1, Math.floor(novaQty)) } : i)
+      .filter(i => i.qty > 0)
+    );
+  }, [setCart]);
+
+  const removerDoCarrinho = useCallback((id) => {
+    setCart((c) => c.filter(i => i.id !== id));
+  }, [setCart]);
+
+  const limparCarrinho = useCallback(() => {
+    setCart([]);
+  }, [setCart]);
+
+  const categorias = useMemo(() => ["Todas", ...Array.from(new Set(produtos.map(p => p.categoria)))], [produtos]);
+
+  const produtosFiltrados = useMemo(() => {
+    return produtos.filter(p => {
+      const matchQuery = p.nome.toLowerCase().includes(query.toLowerCase());
+      const matchCat = categoria === "Todas" || p.categoria === categoria;
+      return matchQuery && matchCat;
+    });
+  }, [produtos, query, categoria]);
+
+  const total = useMemo(() => cart.reduce((s, i) => s + i.preco * i.qty, 0), [cart]);
+
+  // total de itens no carrinho (soma das quantidades)
+  const cartCount = useMemo(() => cart.reduce((s, i) => s + i.qty, 0), [cart]);
+
+  function finalizarCompra(dadosCliente) {
+    console.log("Dados do pedido:", { cliente: dadosCliente, itens: cart, total });
+    limparCarrinho();
+    setCheckoutOpen(false);
+    alert("Compra simulada com sucesso! (Veja console para dados)");
+  }
+
+  // foco nos modais quando abrem
+  useEffect(() => {
+    if (detalhe && detalheRef.current) detalheRef.current.focus();
+  }, [detalhe]);
+
+  useEffect(() => {
+    if (checkoutOpen && checkoutRef.current) checkoutRef.current.focus();
+  }, [checkoutOpen]);
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+      <header className="max-w-7xl mx-auto flex items-center justify-between mb-6">
+        <img src="/logo.png" alt="Logo Vitrashop" className="h-14 w-auto mr-4 rounded-xl shadow" />
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">Vitrashop</h1>
+          <p className="text-sm text-muted-foreground">Loja exemplo — pronto para customizar</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-2">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar produtos..."
+              className="px-3 py-2 rounded-full border"
+              aria-label="Buscar produtos"
+            />
+            <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="px-3 py-2 rounded-full border" aria-label="Filtrar por categoria">
+              {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <Button onClick={() => setCartOpen(!isCartOpen)} className="rounded-2xl" aria-label={`Abrir carrinho, ${cartCount} itens`}>
+            Carrinho ({cartCount})
+          </Button>
+        </div>
+      </header>
+
+      {/* Banner principal */}
+      <div className="max-w-7xl mx-auto mb-8 rounded-3xl overflow-hidden shadow-lg bg-gradient-to-r from-purple-600 to-blue-500 text-white p-10 flex flex-col sm:flex-row items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold mb-2">Ofertas Exclusivas!</h2>
+          <p className="text-lg opacity-90">Confira nossos produtos mais buscados da semana.</p>
+        </div>
+        <img src="https://via.placeholder.com/180x150?text=Promo" className="rounded-xl mt-6 sm:mt-0 shadow-lg" alt="Promoção" />
+      </div>
+
+      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Sessão de Mais Vendidos */}
+        <div className="max-w-7xl mx-auto mb-10 lg:col-span-4">
+          <h3 className="text-2xl font-bold mb-4">Mais Vendidos</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {produtos.slice(0, 4).map(p => (
+              <Card key={p.id + '-mv'} className="rounded-2xl shadow hover:shadow-xl transition duration-300">
+                <CardContent className="p-4 flex flex-col">
+                  <img src={p.img} className="rounded-lg mb-4 object-cover h-36 w-full" alt={p.nome} />
+                  <h4 className="text-lg font-semibold">{p.nome}</h4>
+                  <div className="mt-auto flex justify-between items-center">
+                    <div className="font-bold text-xl">{formatCurrency(p.preco)}</div>
+                    <Button onClick={() => adicionarAoCarrinho(p)} className="rounded-xl" aria-label={`Adicionar ${p.nome} ao carrinho`}>Comprar</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+
+        <section className="lg:col-span-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {produtosFiltrados.map(p => (
+              <Card key={p.id} className="rounded-2xl shadow hover:shadow-lg transition">
+                <CardContent className="p-4 flex flex-col">
+                  <img src={p.img} alt={p.nome} className="rounded-lg mb-4 object-cover h-40 w-full" />
+                  <h2 className="text-lg font-semibold">{p.nome}</h2>
+                  <p className="text-sm text-muted-foreground mb-2">{p.categoria}</p>
+                  <div className="mt-auto flex items-center justify-between">
+                    <div>
+                      <div className="text-xl font-bold">{formatCurrency(p.preco)}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => setDetalhe(p)} className="rounded-2xl" aria-label={`Ver detalhes de ${p.nome}`}>Ver</Button>
+                      <Button onClick={() => adicionarAoCarrinho(p)} className="rounded-2xl" aria-label={`Adicionar ${p.nome} ao carrinho`}>Adicionar</Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+
+        <aside className="lg:col-span-1">
+          <div className="sticky top-6 bg-white p-4 rounded-2xl shadow">
+            <h3 className="text-lg font-semibold mb-2">Resumo do Carrinho</h3>
+            {cart.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Seu carrinho está vazio.</p>
+            ) : (
+              <div className="space-y-3">
+                {cart.map(item => (
+                  <div key={item.id} className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{item.nome}</div>
+                      <div className="text-sm text-muted-foreground">{formatCurrency(item.preco)} x {item.qty}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={item.qty}
+                        min={1}
+                        step={1}
+                        onChange={(e) => alterarQuantidade(item.id, Number(e.target.value))}
+                        className="w-16 px-2 py-1 border rounded"
+                        aria-label={`Quantidade de ${item.nome}`}
+                      />
+                      <Button onClick={() => removerDoCarrinho(item.id)} className="rounded-full" aria-label={`Remover ${item.nome} do carrinho`}>✕</Button>
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-2 border-t">
+                  <div className="flex items-center justify-between font-bold">Total <span>{formatCurrency(total)}</span></div>
+                  <div className="mt-3 flex gap-2">
+                    <Button onClick={() => { if (cart.length) setCheckoutOpen(true); else alert('Carrinho vazio') }} className="w-full">Finalizar Compra</Button>
+                    <Button onClick={limparCarrinho} className="w-24">Limpar</Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 text-sm text-muted-foreground">
+            <p>Deseja personalizar cores, métodos de pagamento ou integração com transportadora? Posso adicionar isso pra você.</p>
+          </div>
+        </aside>
+      </main>
+
+      {/* Modal de detalhe do produto */}
+      {detalhe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            ref={detalheRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Detalhes do produto ${detalhe.nome}`}
+            className="bg-white rounded-2xl max-w-2xl w-full p-6 outline-none"
+          >
+            <div className="flex items-start gap-4">
+              <img src={detalhe.img} alt={detalhe.nome} className="w-48 h-36 object-cover rounded" />
+              <div>
+                <h2 className="text-2xl font-bold">{detalhe.nome}</h2>
+                <p className="text-muted-foreground">{detalhe.categoria}</p>
+                <p className="mt-4 text-xl font-semibold">{formatCurrency(detalhe.preco)}</p>
+                <p className="mt-4">Descrição de exemplo para o produto. Substitua pela descrição real quando tiver.</p>
+                <div className="mt-6 flex gap-2">
+                  <Button onClick={() => adicionarAoCarrinho(detalhe)}>Adicionar ao carrinho</Button>
+                  <Button onClick={() => setDetalhe(null)}>Fechar</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de checkout */}
+      {checkoutOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div
+            ref={checkoutRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Formulário de finalização de compra"
+            className="bg-white rounded-2xl max-w-md w-full p-6 outline-none"
+          >
+            <h3 className="text-xl font-semibold mb-4">Finalizar Compra</h3>
+            <CheckoutForm total={total} onCancel={() => setCheckoutOpen(false)} onFinish={finalizarCompra} />
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function CheckoutForm({ total, onCancel, onFinish }) {
+  const [nome, setNome] = useState("");
+  const [email, setEmail] = useState("");
+  const [endereco, setEndereco] = useState("");
+  const [pagamento, setPagamento] = useState("Cartão");
+
+  function submit(e) {
+    e.preventDefault();
+    if (!nome || !email || !endereco || !pagamento) return alert("Preencha todos os campos");
+    onFinish({ nome, email, endereco, pagamento, total });
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div>
+        <label className="block text-sm">Nome completo</label>
+        <input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label className="block text-sm">E-mail</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label className="block text-sm">Endereço</label>
+        <input value={endereco} onChange={(e) => setEndereco(e.target.value)} className="w-full px-3 py-2 border rounded" />
+      </div>
+      <div>
+        <label className="block text-sm">Forma de Pagamento</label>
+        <select value={pagamento} onChange={(e) => setPagamento(e.target.value)} className="w-full px-3 py-2 border rounded">
+          <option>Cartão</option>
+          <option>Pix</option>
+          <option>Boleto</option>
+        </select>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="font-bold">Total: {formatCurrency(total)}</div>
+        <div className="flex gap-2">
+          <Button type="button" onClick={onCancel}>Cancelar</Button>
+          <Button type="submit">Pagar (simulado)</Button>
+        </div>
+      </div>
+    </form>
+  );
+}
